@@ -1,5 +1,6 @@
 package com.jg.ignition.webcompat.designer.workspace;
 
+import com.inductiveautomation.ignition.common.Base64;
 import com.google.common.collect.ImmutableSet;
 import com.inductiveautomation.ignition.common.ImmutableBytes;
 import com.inductiveautomation.ignition.common.JsonUtilities;
@@ -40,10 +41,12 @@ public class WebResourceEditor extends ResourceEditor<JsonObject> implements Loc
         removeAll();
         setLayout((LayoutManager) new MigLayout("fill, ins 0"));
 
-        if (PythonResource.TYPE.equals(resourceType)) {
-            editor = new PythonResourceEditor(config);
-        } else {
-            editor = new EmptyEditor(config);
+        switch (resourceType) {
+            case PythonResource.TYPE -> editor = new PythonResourceEditor(config);
+            case "file-resource" -> editor = new FileResourceEditor(config);
+            case "text-resource" -> editor = new TextResourceEditor(config);
+            case "mounted-folder-resource" -> editor = new MountedFolderResourceEditor(config);
+            default -> editor = new EmptyEditor(config);
         }
 
         add((JComponent) editor, "push, grow");
@@ -87,6 +90,11 @@ public class WebResourceEditor extends ResourceEditor<JsonObject> implements Loc
                 }
 
                 config.add(method, WebCompatModule.GSON.toJsonTree(methodObject));
+            }
+        } else if ("file-resource".equals(getResourceType(config))) {
+            ImmutableBytes data = resource.getData("file.bin").orElse(null);
+            if (data != null) {
+                config.addProperty("bytes", Base64.encodeBytes(data.getBytes()));
             }
         }
 

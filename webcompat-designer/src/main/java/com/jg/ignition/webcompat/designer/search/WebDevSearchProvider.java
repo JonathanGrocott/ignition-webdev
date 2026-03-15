@@ -90,34 +90,76 @@ public class WebDevSearchProvider extends AbstractSearchProvider {
             }
 
             JsonObject config = configOpt.get();
-            if (!PythonResource.TYPE.equals(JsonUtilities.readString(config, "resource-type", ""))) {
-                continue;
-            }
+            String resourceType = JsonUtilities.readString(config, "resource-type", "");
 
-            for (String methodName : PythonResource.METHODS) {
-                String dataKey = PythonResource.getDataKey(methodName);
-                String code = resource.getData(dataKey)
-                        .map(ImmutableBytes::getBytesAsString)
-                        .orElseGet(() -> JsonUtilities.readString(
-                                JsonUtilities.readObject(config, methodName).orElseGet(JsonObject::new),
-                                "code",
-                                ""));
-                String userCode = PythonResource.maybeRemoveDef(code);
-
-                searchObjects.add(DefaultSearchObject.newBuilder()
-                        .setPropertyName(methodName)
-                        .setLocation("WebDev/" + resource.getResourcePath().getFolderPath())
-                        .setValue(userCode)
-                        .setMutable(project.isLocal(resource.getResourcePath()))
-                        .onLocate(() -> workspace.locate(new com.inductiveautomation.ignition.designer.location.Location(
-                                new ResourceId(project.getName(), WebCompatModule.RESOURCE_TYPE, resource.getResourcePath().getFolderPath()),
-                                Map.of("script", methodName))))
-                        .whenAltered(newCode -> updateMethodCode(project, resource, config, methodName, dataKey, newCode))
-                        .build());
+            if (PythonResource.TYPE.equals(resourceType)) {
+                addPythonSearchObjects(project, resource, config, searchObjects);
+            } else if ("text-resource".equals(resourceType)) {
+                addSimpleConfigSearchObject(project, resource, config, searchObjects, "Text", "text");
+                addSimpleConfigSearchObject(project, resource, config, searchObjects, "Content-Type", "content-type");
+            } else if ("mounted-folder-resource".equals(resourceType)) {
+                addSimpleConfigSearchObject(project, resource, config, searchObjects, "Mounted Folder Path", "folder-path");
+            } else if ("file-resource".equals(resourceType)) {
+                addSimpleConfigSearchObject(project, resource, config, searchObjects, "Content-Type", "content-type");
             }
         }
 
         return searchObjects.iterator();
+    }
+
+    private void addPythonSearchObjects(
+            DesignableProject project,
+            Resource resource,
+            JsonObject config,
+            List<SearchObject> searchObjects) {
+
+        for (String methodName : PythonResource.METHODS) {
+            String dataKey = PythonResource.getDataKey(methodName);
+            String code = resource.getData(dataKey)
+                    .map(ImmutableBytes::getBytesAsString)
+                    .orElseGet(() -> JsonUtilities.readString(
+                            JsonUtilities.readObject(config, methodName).orElseGet(JsonObject::new),
+                            "code",
+                            ""));
+            String userCode = PythonResource.maybeRemoveDef(code);
+
+            searchObjects.add(DefaultSearchObject.newBuilder()
+                    .setPropertyName(methodName)
+                    .setLocation("WebDev/" + resource.getResourcePath().getFolderPath())
+                    .setValue(userCode)
+                    .setMutable(project.isLocal(resource.getResourcePath()))
+                    .onLocate(() -> workspace.locate(new com.inductiveautomation.ignition.designer.location.Location(
+                            new ResourceId(project.getName(), WebCompatModule.RESOURCE_TYPE, resource.getResourcePath().getFolderPath()),
+                            Map.of("script", methodName))))
+                    .whenAltered(newCode -> updateMethodCode(project, resource, config, methodName, dataKey, newCode))
+                    .build());
+        }
+    }
+
+    private void addSimpleConfigSearchObject(
+            DesignableProject project,
+            Resource resource,
+            JsonObject config,
+            List<SearchObject> searchObjects,
+            String propertyLabel,
+            String configKey) {
+        String value = JsonUtilities.readString(config, configKey, "");
+        searchObjects.add(DefaultSearchObject.newBuilder()
+                .setPropertyName(propertyLabel)
+                .setLocation("WebDev/" + resource.getResourcePath().getFolderPath())
+                .setValue(value)
+                .setMutable(project.isLocal(resource.getResourcePath()))
+                .onLocate(() -> workspace.open(resource.getResourcePath()))
+                .whenAltered(newValue -> {
+                    Resource updated = resource.copy((ResourceBuilder builder) -> {
+                        builder.removeData("data.bin");
+                        JsonObject updatedConfig = config.deepCopy();
+                        updatedConfig.addProperty(configKey, newValue);
+                        builder.putData("config.json", WebCompatModule.GSON.toJson(updatedConfig));
+                    });
+                    project.createOrModify(updated);
+                })
+                .build());
     }
 
     private void updateMethodCode(
