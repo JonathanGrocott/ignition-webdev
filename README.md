@@ -70,3 +70,13 @@ From repo root:
 Module artifact:
 
 - `webcompat-build/build/webdev-compat.unsigned.modl`
+
+## Live smoke test helper
+
+Use the included script to validate an endpoint against a running gateway:
+
+- `scripts/smoke_webdev.sh <gateway_base_url> <project> <resource_path> <method> <expected_status> [body_file] [basic_user] [basic_pass]`
+
+Example:
+
+- `scripts/smoke_webdev.sh http://localhost:8088 i3x_2026-03-06_1542 namespaces GET 200`

@@ -5,7 +5,11 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import org.apache.commons.lang3.StringUtils;
 
 public class FileResourceHandler extends BaseHandler {
@@ -28,8 +32,8 @@ public class FileResourceHandler extends BaseHandler {
         resp.setContentType(mimeType);
         resp.addHeader("Accept-Ranges", "bytes");
 
-        Range range = parseRange(req.getHeader("Range"), bytes.length);
-        if (range.invalid()) {
+        List<Range> ranges = parseRanges(req.getHeader("Range"), bytes.length);
+        if (ranges == null) {
             resp.setStatus(HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE);
             resp.setHeader("Content-Range", "bytes */" + bytes.length);
             resp.setContentLength(0);
@@ -37,77 +41,107 @@ public class FileResourceHandler extends BaseHandler {
         }
 
         try (ServletOutputStream out = resp.getOutputStream()) {
-            if (!range.hasRange()) {
+            if (ranges.isEmpty()) {
                 resp.setContentLength(bytes.length);
                 out.write(bytes);
                 return;
             }
 
-            int length = range.end() - range.start() + 1;
+            if (ranges.size() == 1) {
+                Range range = ranges.get(0);
+                int length = range.end() - range.start() + 1;
+                resp.setStatus(HttpServletResponse.SC_PARTIAL_CONTENT);
+                resp.setHeader("Content-Range", "bytes %d-%d/%d".formatted(range.start(), range.end(), bytes.length));
+                resp.setContentLength(length);
+                out.write(bytes, range.start(), length);
+                return;
+            }
+
+            String boundary = "ignition-webdev-" + System.currentTimeMillis();
             resp.setStatus(HttpServletResponse.SC_PARTIAL_CONTENT);
-            resp.setHeader("Content-Range", "bytes %d-%d/%d".formatted(range.start(), range.end(), bytes.length));
-            resp.setContentLength(length);
-            out.write(bytes, range.start(), length);
+            resp.setContentType("multipart/byteranges; boundary=" + boundary);
+
+            byte[] multipart = encodeMultipartRanges(ranges, boundary);
+            resp.setContentLength(multipart.length);
+            out.write(multipart);
         }
     }
 
-    private static Range parseRange(String header, int totalLength) {
+    private byte[] encodeMultipartRanges(List<Range> ranges, String boundary) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] lineBreak = "\r\n".getBytes(StandardCharsets.UTF_8);
+
+        for (Range range : ranges) {
+            out.write(("--" + boundary).getBytes(StandardCharsets.UTF_8));
+            out.write(lineBreak);
+            out.write(("Content-Type: " + mimeType).getBytes(StandardCharsets.UTF_8));
+            out.write(lineBreak);
+            out.write(("Content-Range: bytes %d-%d/%d".formatted(range.start(), range.end(), bytes.length))
+                    .getBytes(StandardCharsets.UTF_8));
+            out.write(lineBreak);
+            out.write(lineBreak);
+            out.write(bytes, range.start(), range.end() - range.start() + 1);
+            out.write(lineBreak);
+        }
+
+        out.write(("--" + boundary + "--").getBytes(StandardCharsets.UTF_8));
+        out.write(lineBreak);
+        return out.toByteArray();
+    }
+
+    private static List<Range> parseRanges(String header, int totalLength) {
         if (StringUtils.isBlank(header)) {
-            return Range.none();
+            return List.of();
         }
 
         if (!header.startsWith("bytes=")) {
-            return Range.invalidRange();
+            return null;
         }
 
-        String rangeValue = header.substring("bytes=".length()).trim();
-        if (rangeValue.contains(",")) {
-            rangeValue = rangeValue.substring(0, rangeValue.indexOf(','));
-        }
+        String raw = header.substring("bytes=".length());
+        String[] tokens = raw.split(",");
+        List<Range> valid = new ArrayList<>();
 
-        String[] parts = rangeValue.split("-", 2);
-        if (parts.length != 2) {
-            return Range.invalidRange();
-        }
+        for (String token : tokens) {
+            String rangeValue = token.trim();
+            String[] parts = rangeValue.split("-", 2);
+            if (parts.length != 2) {
+                continue;
+            }
 
-        try {
-            int start;
-            int end;
+            try {
+                int start;
+                int end;
 
-            if (parts[0].isBlank()) {
-                int suffixLength = Integer.parseInt(parts[1]);
-                if (suffixLength <= 0) {
-                    return Range.invalidRange();
+                if (parts[0].isBlank()) {
+                    int suffixLength = Integer.parseInt(parts[1]);
+                    if (suffixLength <= 0) {
+                        continue;
+                    }
+                    start = Math.max(totalLength - suffixLength, 0);
+                    end = totalLength - 1;
+                } else {
+                    start = Integer.parseInt(parts[0]);
+                    end = parts[1].isBlank() ? totalLength - 1 : Integer.parseInt(parts[1]);
                 }
-                start = Math.max(totalLength - suffixLength, 0);
-                end = totalLength - 1;
-            } else {
-                start = Integer.parseInt(parts[0]);
-                end = parts[1].isBlank() ? totalLength - 1 : Integer.parseInt(parts[1]);
-            }
 
-            if (start < 0 || end < 0 || start > end || start >= totalLength) {
-                return Range.invalidRange();
-            }
+                if (start < 0 || end < 0 || start > end || start >= totalLength) {
+                    continue;
+                }
 
-            end = Math.min(end, totalLength - 1);
-            return Range.of(start, end);
-        } catch (NumberFormatException ex) {
-            return Range.invalidRange();
+                end = Math.min(end, totalLength - 1);
+                valid.add(Range.of(start, end));
+            } catch (NumberFormatException ignored) {
+                // Skip malformed individual range values.
+            }
         }
+
+        return valid.isEmpty() ? null : valid;
     }
 
-    private record Range(boolean hasRange, boolean invalid, int start, int end) {
-        static Range none() {
-            return new Range(false, false, 0, 0);
-        }
-
-        static Range invalidRange() {
-            return new Range(false, true, 0, 0);
-        }
-
+    private record Range(int start, int end) {
         static Range of(int start, int end) {
-            return new Range(true, false, start, end);
+            return new Range(start, end);
         }
     }
 }

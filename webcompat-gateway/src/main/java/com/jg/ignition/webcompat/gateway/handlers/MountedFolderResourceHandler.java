@@ -26,7 +26,14 @@ public class MountedFolderResourceHandler extends BaseHandler {
             urlPath = urlPath.substring(1);
         }
 
-        File target = Path.of(filePath, urlPath).toFile();
+        Path basePath = Path.of(filePath).toAbsolutePath().normalize();
+        Path resolvedPath = basePath.resolve(urlPath).normalize();
+        if (!resolvedPath.startsWith(basePath)) {
+            resp.sendError(404);
+            return;
+        }
+
+        File target = resolvedPath.toFile();
         if (!target.isFile() || !target.canRead()) {
             resp.sendError(404);
             return;
