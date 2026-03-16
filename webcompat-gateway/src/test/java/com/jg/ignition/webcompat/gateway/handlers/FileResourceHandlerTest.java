@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -117,6 +118,41 @@ class FileResourceHandlerTest {
         String multipart = out.toString();
         assertTrue(multipart.contains("Content-Range: bytes 0-1/6"));
         assertTrue(multipart.contains("Content-Range: bytes 4-5/6"));
+    }
+
+    @Test
+    void headReturnsRangeHeadersWithoutBody() throws Exception {
+        byte[] payload = "abcdef".getBytes();
+        FileResourceHandler handler = new FileResourceHandler("text/plain", payload);
+
+        HttpServletRequest req = mock(HttpServletRequest.class);
+        HttpServletResponse resp = mock(HttpServletResponse.class);
+        when(req.getHeader("Range")).thenReturn("bytes=1-3");
+
+        handler.doHead(new PathParser("proj", "file"), req, resp);
+
+        verify(resp).setStatus(HttpServletResponse.SC_PARTIAL_CONTENT);
+        verify(resp).setHeader("Content-Range", "bytes 1-3/6");
+        verify(resp).setContentLength(3);
+        verify(resp).addHeader("Accept-Ranges", "bytes");
+        verify(resp, never()).getOutputStream();
+    }
+
+    @Test
+    void headReturns416ForInvalidRange() throws Exception {
+        byte[] payload = "abcdef".getBytes();
+        FileResourceHandler handler = new FileResourceHandler("text/plain", payload);
+
+        HttpServletRequest req = mock(HttpServletRequest.class);
+        HttpServletResponse resp = mock(HttpServletResponse.class);
+        when(req.getHeader("Range")).thenReturn("bytes=50-60");
+
+        handler.doHead(new PathParser("proj", "file"), req, resp);
+
+        verify(resp).setStatus(HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE);
+        verify(resp).setHeader("Content-Range", "bytes */6");
+        verify(resp).setContentLength(0);
+        verify(resp, never()).getOutputStream();
     }
 
     private static class MemoryOutputStream extends ServletOutputStream {

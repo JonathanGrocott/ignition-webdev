@@ -25,6 +25,9 @@ Current scope supports existing Web Dev project resources stored under:
   - `file-resource`
   - `text-resource`
   - `mounted-folder-resource`
+- File and mounted resources support byte ranges (`Range`) including open-ended, suffix, and multi-part requests.
+- Static resources support `HEAD`; mounted-folder resources also emit `Last-Modified` and handle `If-Modified-Since` (`304`).
+- Mounted-folder handler includes normalized-path and real-path checks to block traversal outside the mounted root.
 - Per-method Python compilation from config + source files
 - Legacy request dictionary keys (`scheme`, `remoteAddr`, `remoteHost`, `remainingPath`, `headers`, `params`, `servletRequest`, `servletResponse`, `context`, `data`, `postData`)
 - Per-session `session` dict under `webdev-{project}-dict`

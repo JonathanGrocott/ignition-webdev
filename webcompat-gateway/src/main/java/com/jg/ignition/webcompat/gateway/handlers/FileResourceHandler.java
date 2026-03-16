@@ -23,48 +23,86 @@ public class FileResourceHandler extends BaseHandler {
 
     @Override
     public void doHead(PathParser path, HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        resp.addHeader("Accept-Ranges", "bytes");
-        super.doHead(path, req, resp);
+        writeResponse(req, resp, true);
     }
 
     @Override
     public void doGet(PathParser path, HttpServletRequest req, HttpServletResponse resp) throws IOException {
-        resp.setContentType(mimeType);
-        resp.addHeader("Accept-Ranges", "bytes");
+        writeResponse(req, resp, false);
+    }
 
-        List<Range> ranges = parseRanges(req.getHeader("Range"), bytes.length);
-        if (ranges == null) {
-            resp.setStatus(HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE);
-            resp.setHeader("Content-Range", "bytes */" + bytes.length);
-            resp.setContentLength(0);
+    private void writeResponse(HttpServletRequest req, HttpServletResponse resp, boolean headOnly) throws IOException {
+        PreparedResponse prepared = prepareResponse(req.getHeader("Range"));
+
+        resp.addHeader("Accept-Ranges", "bytes");
+        if (prepared.contentType() != null) {
+            resp.setContentType(prepared.contentType());
+        }
+        if (prepared.status() != HttpServletResponse.SC_OK) {
+            resp.setStatus(prepared.status());
+        }
+        if (prepared.contentRange() != null) {
+            resp.setHeader("Content-Range", prepared.contentRange());
+        }
+        resp.setContentLength(prepared.contentLength());
+
+        if (headOnly || prepared.status() == HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE) {
             return;
         }
 
         try (ServletOutputStream out = resp.getOutputStream()) {
-            if (ranges.isEmpty()) {
-                resp.setContentLength(bytes.length);
-                out.write(bytes);
+            if (prepared.multipartBody() != null) {
+                out.write(prepared.multipartBody());
                 return;
             }
 
-            if (ranges.size() == 1) {
-                Range range = ranges.get(0);
-                int length = range.end() - range.start() + 1;
-                resp.setStatus(HttpServletResponse.SC_PARTIAL_CONTENT);
-                resp.setHeader("Content-Range", "bytes %d-%d/%d".formatted(range.start(), range.end(), bytes.length));
-                resp.setContentLength(length);
-                out.write(bytes, range.start(), length);
+            if (prepared.range() != null) {
+                int length = prepared.range().end() - prepared.range().start() + 1;
+                out.write(bytes, prepared.range().start(), length);
                 return;
             }
 
-            String boundary = "ignition-webdev-" + System.currentTimeMillis();
-            resp.setStatus(HttpServletResponse.SC_PARTIAL_CONTENT);
-            resp.setContentType("multipart/byteranges; boundary=" + boundary);
-
-            byte[] multipart = encodeMultipartRanges(ranges, boundary);
-            resp.setContentLength(multipart.length);
-            out.write(multipart);
+            out.write(bytes);
         }
+    }
+
+    private PreparedResponse prepareResponse(String rangeHeader) throws IOException {
+        List<Range> ranges = parseRanges(rangeHeader, bytes.length);
+        if (ranges == null) {
+            return new PreparedResponse(
+                    HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE,
+                    null,
+                    "bytes */" + bytes.length,
+                    0,
+                    null,
+                    null);
+        }
+
+        if (ranges.isEmpty()) {
+            return new PreparedResponse(HttpServletResponse.SC_OK, mimeType, null, bytes.length, null, null);
+        }
+
+        if (ranges.size() == 1) {
+            Range range = ranges.get(0);
+            int length = range.end() - range.start() + 1;
+            return new PreparedResponse(
+                    HttpServletResponse.SC_PARTIAL_CONTENT,
+                    mimeType,
+                    "bytes %d-%d/%d".formatted(range.start(), range.end(), bytes.length),
+                    length,
+                    range,
+                    null);
+        }
+
+        String boundary = "ignition-webdev-" + System.currentTimeMillis();
+        byte[] multipart = encodeMultipartRanges(ranges, boundary);
+        return new PreparedResponse(
+                HttpServletResponse.SC_PARTIAL_CONTENT,
+                "multipart/byteranges; boundary=" + boundary,
+                null,
+                multipart.length,
+                null,
+                multipart);
     }
 
     private byte[] encodeMultipartRanges(List<Range> ranges, String boundary) throws IOException {
@@ -143,5 +181,14 @@ public class FileResourceHandler extends BaseHandler {
         static Range of(int start, int end) {
             return new Range(start, end);
         }
+    }
+
+    private record PreparedResponse(
+            int status,
+            String contentType,
+            String contentRange,
+            int contentLength,
+            Range range,
+            byte[] multipartBody) {
     }
 }

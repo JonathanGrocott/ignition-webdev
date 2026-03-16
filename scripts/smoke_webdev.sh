@@ -22,11 +22,16 @@ trap 'rm -f "$TMP_BODY"' EXIT
 
 CURL_ARGS=(
   -sS
+  --max-time 15
   -o "$TMP_BODY"
   -w "%{http_code}"
   -X "$METHOD"
   "$URL"
 )
+
+if [[ "$METHOD" == "HEAD" ]]; then
+  CURL_ARGS=(-sS --max-time 15 -I -o "$TMP_BODY" -w "%{http_code}" "$URL")
+fi
 
 if [[ -n "$BODY_FILE" ]]; then
   CURL_ARGS+=(--data-binary "@$BODY_FILE")
