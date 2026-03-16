@@ -5,5 +5,12 @@
   "overridable": true,
   "files": [
     "config.json"
-  ]
+  ],
+  "attributes": {
+    "lastModificationSignature": "1111111111111111111111111111111111111111111111111111111111111111",
+    "lastModification": {
+      "actor": "admin",
+      "timestamp": "2026-03-15T17:00:00Z"
+    }
+  }
 }

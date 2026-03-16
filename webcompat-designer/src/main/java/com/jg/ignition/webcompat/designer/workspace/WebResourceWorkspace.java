@@ -13,6 +13,7 @@ import com.inductiveautomation.ignition.designer.tabbedworkspace.ResourceDescrip
 import com.inductiveautomation.ignition.designer.tabbedworkspace.ResourceEditor;
 import com.inductiveautomation.ignition.designer.tabbedworkspace.ResourceFolderNode;
 import com.inductiveautomation.ignition.designer.tabbedworkspace.TabbedResourceWorkspace;
+import com.inductiveautomation.ignition.designer.workspacewelcome.DefaultResourceBuilderDelegate;
 import com.inductiveautomation.ignition.designer.workspacewelcome.RecentlyModifiedTablePanel;
 import com.inductiveautomation.ignition.designer.workspacewelcome.ResourceBuilderDelegate;
 import com.inductiveautomation.ignition.designer.workspacewelcome.ResourceBuilderPanel;
@@ -36,8 +37,8 @@ public class WebResourceWorkspace extends TabbedResourceWorkspace {
 
     private static final Icon PYTHON_ICON = VectorIcons.get("script");
     private static final Icon FILE_ICON = VectorIcons.get("file");
-    private static final Icon TEXT_ICON = VectorIcons.get("document");
-    private static final Icon FOLDER_ICON = VectorIcons.get("folder");
+    private static final Icon TEXT_ICON = VectorIcons.get("file-text");
+    private static final Icon FOLDER_ICON = VectorIcons.get("tree-folder");
     private static final Icon RESOURCE_ICON = PYTHON_ICON;
 
     public static final ResourceDescriptor DESCRIPTOR = ResourceDescriptor.builder()
@@ -107,7 +108,9 @@ public class WebResourceWorkspace extends TabbedResourceWorkspace {
                                 WebCompatModule.RESOURCE_TYPE.rootPath(),
                                 List.of(
                                         ResourceBuilderDelegate.build("webcompat.resources.python", PYTHON_ICON, NEW_PYTHON_RESOURCE),
-                                        ResourceBuilderDelegate.build("webcompat.resources.text", TEXT_ICON, NEW_TEXT_RESOURCE)),
+                                        new NewFileResourceBuilderDelegate(),
+                                        ResourceBuilderDelegate.build("webcompat.resources.text", TEXT_ICON, NEW_TEXT_RESOURCE),
+                                        new NewMountedFolderResourceBuilderDelegate()),
                                 WebResourceWorkspace.this::open),
                         new RecentlyModifiedTablePanel(
                                 context,
@@ -174,18 +177,7 @@ public class WebResourceWorkspace extends TabbedResourceWorkspace {
                 return;
             }
 
-            try {
-                String contentType = URLConnection.guessContentTypeFromName(selectedFile.getName());
-                if (contentType == null || contentType.isBlank()) {
-                    contentType = "application/octet-stream";
-                }
-
-                JsonObject prototype = new JsonObject();
-                prototype.addProperty("resource-type", "file-resource");
-                prototype.addProperty("content-type", contentType);
-                addPrototype(builder, prototype);
-                builder.putData("file.bin", ImmutableBytes.fromFile(selectedFile.toPath()));
-            } catch (Exception ex) {
+            if (!configureFileResource(builder, selectedFile)) {
                 canceled = true;
             }
         }
@@ -223,15 +215,109 @@ public class WebResourceWorkspace extends TabbedResourceWorkspace {
                 return;
             }
 
-            JsonObject prototype = new JsonObject();
-            prototype.addProperty("resource-type", "mounted-folder-resource");
-            prototype.addProperty("folder-path", selectedFolder.getAbsolutePath());
-            addPrototype(builder, prototype);
+            if (!configureMountedFolderResource(builder, selectedFolder)) {
+                canceled = true;
+            }
         }
 
         @Override
         protected String newResourceName() {
             return selectedFolder != null ? selectedFolder.getName() : "MountedResource";
+        }
+    }
+
+    private class NewFileResourceBuilderDelegate extends DefaultResourceBuilderDelegate {
+        private File selectedFile;
+
+        NewFileResourceBuilderDelegate() {
+            super("webcompat.resources.file", FILE_ICON);
+        }
+
+        @Override
+        public Optional<ResourcePath> createResource(DesignerContext context, ResourcePath path) {
+            JFileChooser chooser = new JFileChooser();
+            int result = chooser.showOpenDialog((JComponent) getWorkspace());
+            if (result != JFileChooser.APPROVE_OPTION) {
+                return Optional.empty();
+            }
+
+            selectedFile = chooser.getSelectedFile();
+            if (selectedFile == null || !selectedFile.isFile()) {
+                return Optional.empty();
+            }
+
+            return super.createResource(context, path);
+        }
+
+        @Override
+        protected void configureResource(ResourceBuilder builder) {
+            if (!configureFileResource(builder, selectedFile)) {
+                throw new IllegalStateException("Unable to configure file resource");
+            }
+        }
+    }
+
+    private class NewMountedFolderResourceBuilderDelegate extends DefaultResourceBuilderDelegate {
+        private File selectedFolder;
+
+        NewMountedFolderResourceBuilderDelegate() {
+            super("webcompat.resources.folder", FOLDER_ICON);
+        }
+
+        @Override
+        public Optional<ResourcePath> createResource(DesignerContext context, ResourcePath path) {
+            JFileChooser chooser = new JFileChooser();
+            chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+            chooser.setAcceptAllFileFilterUsed(false);
+
+            int result = chooser.showOpenDialog((JComponent) getWorkspace());
+            if (result != JFileChooser.APPROVE_OPTION) {
+                return Optional.empty();
+            }
+
+            selectedFolder = chooser.getSelectedFile();
+            if (selectedFolder == null || !Files.isDirectory(selectedFolder.toPath())) {
+                return Optional.empty();
+            }
+
+            return super.createResource(context, path);
+        }
+
+        @Override
+        protected void configureResource(ResourceBuilder builder) {
+            if (!configureMountedFolderResource(builder, selectedFolder)) {
+                throw new IllegalStateException("Unable to configure mounted folder resource");
+            }
+        }
+    }
+
+    private static boolean configureFileResource(ResourceBuilder builder, File selectedFile) {
+        try {
+            String contentType = URLConnection.guessContentTypeFromName(selectedFile.getName());
+            if (contentType == null || contentType.isBlank()) {
+                contentType = "application/octet-stream";
+            }
+
+            JsonObject prototype = new JsonObject();
+            prototype.addProperty("resource-type", "file-resource");
+            prototype.addProperty("content-type", contentType);
+            addPrototype(builder, prototype);
+            builder.putData("file.bin", ImmutableBytes.fromFile(selectedFile.toPath()));
+            return true;
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    private static boolean configureMountedFolderResource(ResourceBuilder builder, File selectedFolder) {
+        try {
+            JsonObject prototype = new JsonObject();
+            prototype.addProperty("resource-type", "mounted-folder-resource");
+            prototype.addProperty("folder-path", selectedFolder.getAbsolutePath());
+            addPrototype(builder, prototype);
+            return true;
+        } catch (Exception ex) {
+            return false;
         }
     }
 }
