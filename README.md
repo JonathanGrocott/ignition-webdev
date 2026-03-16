@@ -83,3 +83,18 @@ Use the included script to validate an endpoint against a running gateway:
 Example:
 
 - `scripts/smoke_webdev.sh http://localhost:8088 i3x_2026-03-06_1542 namespaces GET 200`
+
+## Phase 2 live parity project (file/text/mounted)
+
+This repo includes a ready-to-import project template plus mounted test content:
+
+- `fixtures/live-parity/project-template`
+- `fixtures/live-parity/mounted-content`
+
+Prepare a local importable project with the mounted path injected:
+
+- `scripts/prepare_live_parity_project.sh`
+
+Then import the generated project folder into Ignition and run live parity checks:
+
+- `scripts/parity_phase2_live.sh http://localhost:8088 webcompat_live_parity`

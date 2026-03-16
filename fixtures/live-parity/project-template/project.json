@@ -1,0 +1,7 @@
+{
+  "title": "WebCompat Live Parity",
+  "description": "Live parity project for file/text/mounted-folder resources",
+  "enabled": true,
+  "inheritable": false,
+  "parent": ""
+}
