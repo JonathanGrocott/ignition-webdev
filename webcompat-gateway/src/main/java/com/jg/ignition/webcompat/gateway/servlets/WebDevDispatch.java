@@ -18,10 +18,13 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 public class WebDevDispatch extends HttpServlet {
     private static final LoggerEx LOG = LogUtil.getLogger("WebCompat.Dispatch");
+    private static final long PROJECT_CACHE_MAX_ENTRIES = 256;
+    private static final long PROJECT_CACHE_EXPIRE_MINUTES = 30;
 
     private final Pattern basePathPattern;
     private final Pattern pathPattern;
@@ -54,7 +57,10 @@ public class WebDevDispatch extends HttpServlet {
     };
 
     public WebDevDispatch() {
-        this.mainCache = CacheBuilder.newBuilder().build(new CacheLoader<>() {
+        this.mainCache = CacheBuilder.newBuilder()
+                .maximumSize(PROJECT_CACHE_MAX_ENTRIES)
+                .expireAfterAccess(PROJECT_CACHE_EXPIRE_MINUTES, TimeUnit.MINUTES)
+                .build(new CacheLoader<>() {
             @Override
             public ProjectDispatcher load(String projectName) {
                 return new ProjectDispatcher(WebDevDispatch.this, projectName);

@@ -2,6 +2,10 @@ plugins {
     id("io.ia.sdk.modl")
 }
 
+val skipModuleSigning = providers.gradleProperty("skipModlSigning")
+    .map { it.equals("true", ignoreCase = true) }
+    .orElse(true)
+
 dependencies {
     modlImplementation(project(":webcompat-common"))
     modlImplementation(project(":webcompat-gateway"))
@@ -28,7 +32,7 @@ ignitionModule {
             "com.jg.ignition.webcompat.designer.DesignerHook" to "D"
         )
     )
-    skipModlSigning.set(true)
+    skipModlSigning.set(skipModuleSigning)
 }
 
 tasks.named("writeModuleXml") {
@@ -67,7 +71,7 @@ tasks.named("writeModuleXml") {
             append("\t\t<version>").append(version).append("</version>\n")
             append("\t\t<description>Web Dev-compatible Python endpoint module for Ignition 8.3</description>\n")
             append("\t\t<requiredIgnitionVersion>").append(ignitionVersion).append("</requiredIgnitionVersion>\n")
-            append("\t\t<freeModule>false</freeModule>\n")
+            append("\t\t<freeModule>true</freeModule>\n")
             append("\t\t<hook scope=\"G\">com.jg.ignition.webcompat.gateway.GatewayHook</hook>\n")
             append("\t\t<hook scope=\"D\">com.jg.ignition.webcompat.designer.DesignerHook</hook>\n")
             append("\t\t<requiredFrameworkVersion>8</requiredFrameworkVersion>\n")

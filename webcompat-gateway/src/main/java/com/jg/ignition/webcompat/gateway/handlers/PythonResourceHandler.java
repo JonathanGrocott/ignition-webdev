@@ -345,7 +345,7 @@ public class PythonResourceHandler extends BaseHandler {
             }
         } catch (Exception ex) {
             LOG.errorf("Error executing %s", toString(method), ex);
-            resp.sendError(500, ex.getMessage());
+            resp.sendError(500);
         } finally {
             thread.setContextClassLoader(oldLoader);
         }

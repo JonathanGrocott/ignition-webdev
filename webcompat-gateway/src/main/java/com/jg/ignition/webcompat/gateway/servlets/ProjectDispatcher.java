@@ -30,9 +30,12 @@ import com.jg.ignition.webcompat.gateway.handlers.TextResourceHandler;
 import jakarta.servlet.ServletException;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 class ProjectDispatcher {
     private static final LoggerEx LOG = LogUtil.getLogger("WebCompat.Dispatch");
+    private static final long HANDLER_CACHE_MAX_ENTRIES = 4096;
+    private static final long HANDLER_CACHE_EXPIRE_MINUTES = 30;
 
     private final WebDevDispatch webDevDispatch;
     private final String projectName;
@@ -41,7 +44,10 @@ class ProjectDispatcher {
     ProjectDispatcher(WebDevDispatch webDevDispatch, String projectName) {
         this.webDevDispatch = webDevDispatch;
         this.projectName = projectName;
-        this.cache = CacheBuilder.newBuilder().build(new CacheLoader<>() {
+        this.cache = CacheBuilder.newBuilder()
+                .maximumSize(HANDLER_CACHE_MAX_ENTRIES)
+                .expireAfterAccess(HANDLER_CACHE_EXPIRE_MINUTES, TimeUnit.MINUTES)
+                .build(new CacheLoader<>() {
             @Override
             public BaseHandler load(PathParser path) {
                 return loadHandler(path);

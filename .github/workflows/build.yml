@@ -28,8 +28,8 @@ jobs:
     - name: Make gradlew executable
       run: chmod +x ./gradlew
 
-    - name: Build module
-      run: ./gradlew clean :webcompat-build:build
+    - name: Build and test all modules
+      run: ./gradlew clean build
 
     - name: Upload module artifact
       uses: actions/upload-artifact@v4

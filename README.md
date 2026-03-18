@@ -98,3 +98,11 @@ Prepare a local importable project with the mounted path injected:
 Then import the generated project folder into Ignition and run live parity checks:
 
 - `scripts/parity_phase2_live.sh http://localhost:8088 webcompat_live_parity`
+
+## License
+
+MIT. See `LICENSE`.
+
+## Release Process
+
+See `RELEASE_CHECKLIST.md` for preflight checks, parity validation, and the tag/publish sequence.

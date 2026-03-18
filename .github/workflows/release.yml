@@ -31,8 +31,8 @@ jobs:
     - name: Make gradlew executable
       run: chmod +x ./gradlew
 
-    - name: Build module
-      run: ./gradlew clean :webcompat-build:build
+    - name: Build and test all modules
+      run: ./gradlew clean build
 
     - name: Get version from gradle.properties
       id: get_version
@@ -44,7 +44,14 @@ jobs:
     - name: Find .modl file
       id: find_modl
       run: |
-        MODL_FILE=$(find webcompat-build/build -name "*.unsigned.modl" -type f | head -1)
+        MODL_FILE=$(find webcompat-build/build -name "*.modl" ! -name "*.unsigned.modl" -type f | head -1)
+        if [ -z "$MODL_FILE" ]; then
+          MODL_FILE=$(find webcompat-build/build -name "*.unsigned.modl" -type f | head -1)
+        fi
+        if [ -z "$MODL_FILE" ]; then
+          echo "No .modl file found under webcompat-build/build"
+          exit 1
+        fi
         echo "MODL_FILE=$MODL_FILE" >> $GITHUB_ENV
         echo "Found module file: $MODL_FILE"
 
