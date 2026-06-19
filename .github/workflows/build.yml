@@ -31,9 +31,19 @@ jobs:
     - name: Build and test all modules
       run: ./gradlew clean build
 
+    - name: Sign module
+      run: ./scripts/sign-module.sh
+
+    - name: Verify signed module
+      run: |
+        unzip -l webcompat-build/build/webdev-compat.modl | grep -q "certificates.p7b"
+        unzip -l webcompat-build/build/webdev-compat.modl | grep -q "signatures.properties"
+
     - name: Upload module artifact
       uses: actions/upload-artifact@v4
       with:
         name: webdev-compat-module
-        path: webcompat-build/build/*.modl
+        path: |
+          webcompat-build/build/*.modl
+          !webcompat-build/build/*.unsigned.modl
         retention-days: 30

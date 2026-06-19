@@ -69,10 +69,18 @@ From repo root:
 
 - `./gradlew test`
 - `./gradlew build`
+- `./scripts/sign-module.sh`
 
 Module artifact:
 
-- `webcompat-build/build/webdev-compat.unsigned.modl`
+- unsigned intermediate: `webcompat-build/build/webdev-compat.unsigned.modl`
+- signed module: `webcompat-build/build/webdev-compat.modl`
+
+If signing material does not exist yet, `./scripts/sign-module.sh` creates a simple self-signed certificate under `certs/`; those files are ignored by git. Keep the same generated files if you want future builds to use the same certificate, so Ignition users only need to accept that certificate once.
+
+Verify the module contains the signing payload:
+
+- `unzip -l webcompat-build/build/webdev-compat.modl | grep -E 'certificates.p7b|signatures.properties'`
 
 ## Live smoke test helper
 
