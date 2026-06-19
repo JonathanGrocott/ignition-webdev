@@ -17,14 +17,13 @@ Use this checklist before creating a public release.
 - [ ] (Optional) Run targeted smoke test:
   - `./scripts/smoke_webdev.sh http://localhost:8088 webcompat_live_parity text GET 200`
 
-## 3. Signing Decision
+## 3. Signing
 
-- [ ] Decide artifact type for this release:
-  - Unsigned (default): keep `skipModlSigning=true`
-  - Signed: run with `-PskipModlSigning=false` plus required signing configuration
 - [ ] Build release artifact:
-  - Unsigned: `./gradlew clean build`
-  - Signed: `./gradlew clean build -PskipModlSigning=false`
+  - `./gradlew clean build`
+  - `./scripts/sign-module.sh`
+- [ ] Verify signed artifact:
+  - `unzip -l webcompat-build/build/webdev-compat.modl | grep -E 'certificates.p7b|signatures.properties'`
 
 ## 4. Tag and Publish
 
