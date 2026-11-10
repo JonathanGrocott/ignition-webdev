@@ -7,19 +7,15 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 class PathParserTest {
-    private static final Pattern BASE = Pattern.compile("/webdev/([A-Za-z_][A-Za-z0-9_-]*)/?");
-    private static final Pattern PATH = Pattern.compile("/webdev/([A-Za-z_][A-Za-z0-9_-]*)/([\\w\\-\\.\\/\\+\\%\\ ]+).*");
-
     @Test
     void parsesRootResourcePath() {
         HttpServletRequest req = mock(HttpServletRequest.class);
         when(req.getPathInfo()).thenReturn("/webdev/MyProject/");
 
-        PathParser path = PathParser.fromRequest(BASE, PATH, req);
+        PathParser path = PathParser.fromRequest(req);
         assertTrue(path.isValid());
         assertTrue(path.isRootPath());
         assertEquals("MyProject", path.getProject());
@@ -30,7 +26,7 @@ class PathParserTest {
         HttpServletRequest req = mock(HttpServletRequest.class);
         when(req.getPathInfo()).thenReturn("/webdev/MyProject/api/v1/devices");
 
-        PathParser path = PathParser.fromRequest(BASE, PATH, req);
+        PathParser path = PathParser.fromRequest(req);
         assertTrue(path.isValid());
         assertFalse(path.isRootPath());
         assertEquals("MyProject", path.getProject());
@@ -38,11 +34,19 @@ class PathParserTest {
     }
 
     @Test
+    void preservesPunctuationAndUnicodeInResourcePath() {
+        HttpServletRequest req = mock(HttpServletRequest.class);
+        when(req.getPathInfo()).thenReturn("/webdev/MyProject/assets/café! (v2).js");
+
+        assertEquals("assets/café! (v2).js", PathParser.fromRequest(req).getResource());
+    }
+
+    @Test
     void rejectsInvalidPath() {
         HttpServletRequest req = mock(HttpServletRequest.class);
         when(req.getPathInfo()).thenReturn("/system/other/path");
 
-        PathParser path = PathParser.fromRequest(BASE, PATH, req);
+        PathParser path = PathParser.fromRequest(req);
         assertFalse(path.isValid());
     }
 }

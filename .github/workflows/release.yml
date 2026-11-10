@@ -74,9 +74,11 @@ jobs:
           Version: ${{ env.VERSION }}
 
           ### Installation
-          1. Download the signed .modl file below
-          2. Install it in Ignition via Config > Modules > Install or Upgrade a Module
-          3. Accept the self-signed certificate if prompted
+          1. Download `webdev-compat.modl` from this release.
+          2. In the Ignition Gateway, open **Platform > System > Modules** and select **Install or Upgrade Module**.
+          3. Choose the downloaded file, review the signing certificate if prompted, and verify that WebDevCompat is active.
+
+          WebDevCompat registers `/system/webdev/*`. With Event Streams installed and enabled, it also registers `/system/eventstream/*`. Ensure the applicable routes are available before enabling WebDevCompat.
 
           ### Changes
           See the commit history for details on changes in this release.

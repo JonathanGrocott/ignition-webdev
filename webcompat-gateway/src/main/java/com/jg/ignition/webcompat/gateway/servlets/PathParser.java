@@ -1,22 +1,23 @@
 package com.jg.ignition.webcompat.gateway.servlets;
 
+import com.jg.ignition.webcompat.common.WebCompatModule;
 import jakarta.servlet.http.HttpServletRequest;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.regex.Pattern;
+import java.util.Locale;
 
 public record PathParser(String project, String resource) {
-    public static PathParser fromRequest(Pattern basePathPattern, Pattern pathPattern, HttpServletRequest request) {
-        String pathInfo = StringUtils.defaultString(request.getPathInfo());
+    private static final Pattern PATH = Pattern.compile("/([^/]+)/([A-Za-z_][A-Za-z0-9_-]*)(?:/([^\\p{Cntrl}]*))?");
 
-        var baseMatcher = basePathPattern.matcher(pathInfo);
-        if (baseMatcher.matches()) {
-            return new PathParser(baseMatcher.group(1), null);
-        }
+    static PathParser fromRequest(HttpServletRequest request) {
+        return fromRequest(request, WebCompatModule.SERVLET_KEY);
+    }
 
-        var matcher = pathPattern.matcher(pathInfo);
-        if (matcher.matches()) {
-            return new PathParser(matcher.group(1), matcher.group(2));
+    static PathParser fromRequest(HttpServletRequest request, String servletKey) {
+        var matcher = PATH.matcher(StringUtils.defaultString(request.getPathInfo()));
+        if (matcher.matches() && servletKey.equals(matcher.group(1))) {
+            return new PathParser(matcher.group(2), StringUtils.defaultIfEmpty(matcher.group(3), null));
         }
 
         return new PathParser(null, null);
@@ -39,6 +40,7 @@ public record PathParser(String project, String resource) {
     }
 
     public PathParser lowercase() {
-        return new PathParser(project != null ? project.toLowerCase() : null, resource != null ? resource.toLowerCase() : null);
+        return new PathParser(project != null ? project.toLowerCase(Locale.ROOT) : null,
+                resource != null ? resource.toLowerCase(Locale.ROOT) : null);
     }
 }

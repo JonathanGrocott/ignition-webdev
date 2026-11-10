@@ -1,34 +1,51 @@
 package com.jg.ignition.webcompat.designer.workspace;
 
+import com.inductiveautomation.ignition.client.util.gui.ErrorUtil;
 import com.inductiveautomation.ignition.common.Base64;
+import com.inductiveautomation.ignition.common.ImmutableBytes;
 import com.inductiveautomation.ignition.common.JsonUtilities;
 import com.inductiveautomation.ignition.common.gson.JsonObject;
 import com.inductiveautomation.ignition.common.resourcecollection.ResourceBuilder;
+import com.inductiveautomation.ignition.common.resourcecollection.ResourcePath;
+import com.inductiveautomation.ignition.common.util.ResourceUtil;
+import com.inductiveautomation.ignition.designer.tabbedworkspace.TabbedResourceWorkspace;
 import com.jg.ignition.webcompat.designer.workspace.WebResourceEditor.WebDevResourceEditor;
+import java.awt.EventQueue;
 import java.awt.LayoutManager;
+import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.net.URLConnection;
+import java.util.Arrays;
+import javax.imageio.ImageIO;
+import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.JTextField;
+import javax.swing.JScrollPane;
 import net.miginfocom.swing.MigLayout;
 
 public class FileResourceEditor extends JPanel implements WebDevResourceEditor {
     private final JsonObject config;
-    private final JTextField contentType;
+    private final TabbedResourceWorkspace workspace;
+    private final ResourcePath path;
+    private final ContentTypePicker contentType;
     private final JLabel fileInfo;
     private byte[] bytes;
 
-    FileResourceEditor(JsonObject config) {
+    FileResourceEditor(TabbedResourceWorkspace workspace, ResourcePath path, JsonObject config) {
         super((LayoutManager) new MigLayout("ins 16, fillx"));
         this.config = config;
+        this.workspace = workspace;
+        this.path = path;
 
-        this.contentType = new JTextField(JsonUtilities.readString(config, "content-type", "application/octet-stream"));
+        this.contentType = new ContentTypePicker(JsonUtilities.readString(config, "content-type", "application/octet-stream"));
         this.bytes = decodeBase64(JsonUtilities.readString(config, "bytes", ""));
-        this.fileInfo = new JLabel(sizeText());
+        this.fileInfo = new JLabel();
+        updatePreview();
+        contentType.addActionListener(event -> updatePreview());
 
         JButton choose = new JButton("Choose...");
         choose.addActionListener(e -> pickFile());
@@ -36,7 +53,7 @@ public class FileResourceEditor extends JPanel implements WebDevResourceEditor {
         add(new JLabel("Content-Type"), "split 2");
         add(contentType, "growx, wrap");
         add(new JLabel("File"), "split 3");
-        add(fileInfo, "growx, pushx");
+        add(new JScrollPane(fileInfo), "growx, pushx, hmax 260");
         add(choose, "wrap");
     }
 
@@ -47,15 +64,54 @@ public class FileResourceEditor extends JPanel implements WebDevResourceEditor {
             File selected = chooser.getSelectedFile();
             if (selected != null && selected.isFile()) {
                 try {
-                    bytes = Files.readAllBytes(selected.toPath());
-                    fileInfo.setText(selected.getName() + " (" + bytes.length + " bytes)");
-                    String guessed = URLConnection.guessContentTypeFromName(selected.getName());
-                    if (guessed != null && !guessed.isBlank()) {
-                        contentType.setText(guessed);
-                    }
-                } catch (Exception ignored) {
-                    // Leave previous bytes in place if loading fails.
+                    replaceFile(selected);
+                } catch (Exception ex) {
+                    ErrorUtil.showError(ex);
                 }
+            }
+        }
+    }
+
+    private void replaceFile(File selected) throws Exception {
+        String name = selected.getName();
+        boolean rename = !path.getName().equals(name);
+        var project = workspace.getContext().getProject();
+        if (!ResourceUtil.isLegalName(name)) {
+            throw new IOException("Invalid resource name: " + name);
+        }
+        ResourcePath destination = path.getParent().getChild(name);
+        if (rename && project.getResource(destination).filter(resource -> !resource.getResourcePath().equals(path)).isPresent()) {
+            throw new IOException("A resource named " + name + " already exists.");
+        }
+
+        byte[] replacement = Files.readAllBytes(selected.toPath());
+        bytes = replacement;
+        String guessed = URLConnection.guessContentTypeFromName(name);
+        contentType.setSelectedItem(guessed == null ? "application/octet-stream" : guessed);
+        updatePreview();
+        workspace.commit(path);
+
+        if (rename) {
+            var savedBytes = project.getResource(path).flatMap(resource -> resource.getData("file.bin"));
+            if (savedBytes.map(ImmutableBytes::getBytes).filter(saved -> Arrays.equals(saved, replacement)).isEmpty()) {
+                throw new IOException("Unable to save replacement for " + path.getName());
+            }
+            project.renameResource(path, name);
+            EventQueue.invokeLater(() -> workspace.open(destination));
+        }
+    }
+
+    private void updatePreview() {
+        fileInfo.setText(bytes.length + " bytes");
+        fileInfo.setIcon(null);
+        if (contentType.contentType().startsWith("image/")) {
+            try {
+                var image = ImageIO.read(new ByteArrayInputStream(bytes));
+                if (image != null) {
+                    fileInfo.setIcon(new ImageIcon(image));
+                }
+            } catch (IOException ignored) {
+                // A file can still be served if Java cannot preview it.
             }
         }
     }
@@ -71,14 +127,10 @@ public class FileResourceEditor extends JPanel implements WebDevResourceEditor {
         }
     }
 
-    private String sizeText() {
-        return bytes.length + " bytes";
-    }
-
     @Override
     public JsonObject getConfig() {
         config.addProperty("resource-type", "file-resource");
-        config.addProperty("content-type", contentType.getText());
+        config.addProperty("content-type", contentType.contentType());
         config.addProperty("bytes", Base64.encodeBytes(bytes));
         return config;
     }

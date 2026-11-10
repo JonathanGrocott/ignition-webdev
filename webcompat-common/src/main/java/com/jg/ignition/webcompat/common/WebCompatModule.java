@@ -15,6 +15,9 @@ public final class WebCompatModule {
             new ResourceType("com.inductiveautomation.webdev", "resources");
 
     public static final String SERVLET_KEY = "webdev";
+    public static final String EVENT_STREAM_MODULE_ID = "com.inductiveautomation.eventstream";
+    public static final String EVENT_STREAM_SOURCE_ID = "com.inductiveautomation.webdev.http";
+    public static final String EVENT_STREAM_SERVLET_KEY = "eventstream";
     public static final Gson GSON = new GsonBuilder()
             .setPrettyPrinting()
             .disableHtmlEscaping()

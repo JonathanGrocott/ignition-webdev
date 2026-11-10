@@ -7,12 +7,12 @@ Use this checklist before creating a public release.
 - [ ] Confirm working tree is clean: `git status --short`
 - [ ] Confirm target branch is up to date: `git pull --ff-only`
 - [ ] Confirm module version in `gradle.properties` is set correctly (`moduleVersion=...`)
-- [ ] Confirm built-in Ignition Web Dev module is disabled/uninstalled on production targets (path ownership conflict with `/system/webdev/*`)
+- [ ] Verify that `/system/webdev/*` is available on the target Gateway. If Event Streams is installed and enabled, also verify that `/system/eventstream/*` is available.
 
 ## 2. Quality Gates
 
 - [ ] Run full build and tests: `./gradlew clean build`
-- [ ] Run live parity suite against a real gateway:
+- [ ] Run the hosted-file smoke test against a test Gateway:
   - `./scripts/parity_phase2_live.sh http://localhost:8088 webcompat_live_parity`
 - [ ] (Optional) Run targeted smoke test:
   - `./scripts/smoke_webdev.sh http://localhost:8088 webcompat_live_parity text GET 200`

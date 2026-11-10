@@ -8,9 +8,10 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Enumeration;
 import java.util.List;
-import org.apache.commons.lang3.StringUtils;
+import org.eclipse.jetty.http.ByteRange;
 
 public class FileResourceHandler extends BaseHandler {
     private final String mimeType;
@@ -32,7 +33,7 @@ public class FileResourceHandler extends BaseHandler {
     }
 
     private void writeResponse(HttpServletRequest req, HttpServletResponse resp, boolean headOnly) throws IOException {
-        PreparedResponse prepared = prepareResponse(req.getHeader("Range"));
+        PreparedResponse prepared = prepareResponse(req.getHeaders("Range"), req.getHeader("Request-Range") != null);
 
         resp.addHeader("Accept-Ranges", "bytes");
         if (prepared.contentType() != null) {
@@ -57,8 +58,7 @@ public class FileResourceHandler extends BaseHandler {
             }
 
             if (prepared.range() != null) {
-                int length = prepared.range().end() - prepared.range().start() + 1;
-                out.write(bytes, prepared.range().start(), length);
+                out.write(bytes, (int) prepared.range().first(), (int) prepared.range().getLength());
                 return;
             }
 
@@ -66,59 +66,58 @@ public class FileResourceHandler extends BaseHandler {
         }
     }
 
-    private PreparedResponse prepareResponse(String rangeHeader) throws IOException {
-        List<Range> ranges = parseRanges(rangeHeader, bytes.length);
-        if (ranges == null) {
+    private PreparedResponse prepareResponse(Enumeration<String> rangeHeaders, boolean legacyMultipart) throws IOException {
+        if (rangeHeaders == null || !rangeHeaders.hasMoreElements()) {
+            return new PreparedResponse(HttpServletResponse.SC_OK, mimeType, null, bytes.length, null, null);
+        }
+
+        List<ByteRange> ranges = ByteRange.parse(Collections.list(rangeHeaders), bytes.length);
+        if (ranges.isEmpty()) {
             return new PreparedResponse(
                     HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE,
                     null,
-                    "bytes */" + bytes.length,
+                    ByteRange.toNonSatisfiableHeaderValue(bytes.length),
                     0,
                     null,
                     null);
         }
 
-        if (ranges.isEmpty()) {
-            return new PreparedResponse(HttpServletResponse.SC_OK, mimeType, null, bytes.length, null, null);
-        }
-
         if (ranges.size() == 1) {
-            Range range = ranges.get(0);
-            int length = range.end() - range.start() + 1;
+            ByteRange range = ranges.get(0);
             return new PreparedResponse(
                     HttpServletResponse.SC_PARTIAL_CONTENT,
                     mimeType,
-                    "bytes %d-%d/%d".formatted(range.start(), range.end(), bytes.length),
-                    length,
+                    range.toHeaderValue(bytes.length),
+                    (int) range.getLength(),
                     range,
                     null);
         }
 
         String boundary = "ignition-webdev-" + System.currentTimeMillis();
         byte[] multipart = encodeMultipartRanges(ranges, boundary);
+        String multipartType = legacyMultipart ? "multipart/x-byteranges" : "multipart/byteranges";
         return new PreparedResponse(
                 HttpServletResponse.SC_PARTIAL_CONTENT,
-                "multipart/byteranges; boundary=" + boundary,
+                multipartType + "; boundary=" + boundary,
                 null,
                 multipart.length,
                 null,
                 multipart);
     }
 
-    private byte[] encodeMultipartRanges(List<Range> ranges, String boundary) throws IOException {
+    private byte[] encodeMultipartRanges(List<ByteRange> ranges, String boundary) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         byte[] lineBreak = "\r\n".getBytes(StandardCharsets.UTF_8);
 
-        for (Range range : ranges) {
+        for (ByteRange range : ranges) {
             out.write(("--" + boundary).getBytes(StandardCharsets.UTF_8));
             out.write(lineBreak);
             out.write(("Content-Type: " + mimeType).getBytes(StandardCharsets.UTF_8));
             out.write(lineBreak);
-            out.write(("Content-Range: bytes %d-%d/%d".formatted(range.start(), range.end(), bytes.length))
-                    .getBytes(StandardCharsets.UTF_8));
+            out.write(("Content-Range: " + range.toHeaderValue(bytes.length)).getBytes(StandardCharsets.UTF_8));
             out.write(lineBreak);
             out.write(lineBreak);
-            out.write(bytes, range.start(), range.end() - range.start() + 1);
+            out.write(bytes, (int) range.first(), (int) range.getLength());
             out.write(lineBreak);
         }
 
@@ -127,68 +126,12 @@ public class FileResourceHandler extends BaseHandler {
         return out.toByteArray();
     }
 
-    private static List<Range> parseRanges(String header, int totalLength) {
-        if (StringUtils.isBlank(header)) {
-            return List.of();
-        }
-
-        if (!header.startsWith("bytes=")) {
-            return null;
-        }
-
-        String raw = header.substring("bytes=".length());
-        String[] tokens = raw.split(",");
-        List<Range> valid = new ArrayList<>();
-
-        for (String token : tokens) {
-            String rangeValue = token.trim();
-            String[] parts = rangeValue.split("-", 2);
-            if (parts.length != 2) {
-                continue;
-            }
-
-            try {
-                int start;
-                int end;
-
-                if (parts[0].isBlank()) {
-                    int suffixLength = Integer.parseInt(parts[1]);
-                    if (suffixLength <= 0) {
-                        continue;
-                    }
-                    start = Math.max(totalLength - suffixLength, 0);
-                    end = totalLength - 1;
-                } else {
-                    start = Integer.parseInt(parts[0]);
-                    end = parts[1].isBlank() ? totalLength - 1 : Integer.parseInt(parts[1]);
-                }
-
-                if (start < 0 || end < 0 || start > end || start >= totalLength) {
-                    continue;
-                }
-
-                end = Math.min(end, totalLength - 1);
-                valid.add(Range.of(start, end));
-            } catch (NumberFormatException ignored) {
-                // Skip malformed individual range values.
-            }
-        }
-
-        return valid.isEmpty() ? null : valid;
-    }
-
-    private record Range(int start, int end) {
-        static Range of(int start, int end) {
-            return new Range(start, end);
-        }
-    }
-
     private record PreparedResponse(
             int status,
             String contentType,
             String contentRange,
             int contentLength,
-            Range range,
+            ByteRange range,
             byte[] multipartBody) {
     }
 }

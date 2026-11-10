@@ -8,19 +8,18 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
-import javax.swing.JTextField;
 import net.miginfocom.swing.MigLayout;
 
 public class TextResourceEditor extends JPanel implements WebDevResourceEditor {
     private final JsonObject config;
-    private final JTextField contentType;
+    private final ContentTypePicker contentType;
     private final JTextArea textArea;
 
     TextResourceEditor(JsonObject config) {
         super((LayoutManager) new MigLayout("ins 16, fill"));
         this.config = config;
 
-        contentType = new JTextField(JsonUtilities.readString(config, "content-type", "text/plain"));
+        contentType = new ContentTypePicker(JsonUtilities.readString(config, "content-type", "text/plain"));
         textArea = new JTextArea(JsonUtilities.readString(config, "text", ""));
 
         add(new JLabel("Content-Type"), "split 2");
@@ -31,7 +30,7 @@ public class TextResourceEditor extends JPanel implements WebDevResourceEditor {
     @Override
     public JsonObject getConfig() {
         config.addProperty("resource-type", "text-resource");
-        config.addProperty("content-type", contentType.getText());
+        config.addProperty("content-type", contentType.contentType());
         config.addProperty("text", textArea.getText());
         return config;
     }

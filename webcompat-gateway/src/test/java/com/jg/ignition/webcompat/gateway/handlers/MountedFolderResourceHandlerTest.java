@@ -45,13 +45,41 @@ class MountedFolderResourceHandlerTest {
         MountedFolderResourceHandler handler = new MountedFolderResourceHandler(dir.toString(), "assets");
 
         HttpServletRequest req = mock(HttpServletRequest.class);
+        when(req.getRequestURI()).thenReturn("/system/webdev/proj/assets/");
         HttpServletResponse resp = mock(HttpServletResponse.class);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         when(resp.getOutputStream()).thenReturn(new MemoryOutputStream(out));
 
-        handler.doGet(new PathParser("proj", "assets"), req, resp);
+        handler.doGet(new PathParser("proj", "assets/"), req, resp);
 
         assertArrayEquals("root".getBytes(), out.toByteArray());
+    }
+
+    @Test
+    void redirectsToDirectoryUrlWithQueryAndEncodedPathIntact() throws IOException {
+        Path dir = Files.createTempDirectory("webcompat-mounted");
+        Path nested = Files.createDirectory(dir.resolve("nested docs"));
+        Files.writeString(dir.resolve("index.html"), "root");
+        Files.writeString(nested.resolve("index.html"), "nested");
+        MountedFolderResourceHandler handler = new MountedFolderResourceHandler(dir.toString(), "assets");
+
+        HttpServletRequest req = mock(HttpServletRequest.class);
+        when(req.getRequestURI()).thenReturn("/system/webdev/proj/assets");
+        HttpServletResponse rootResponse = mock(HttpServletResponse.class);
+        handler.doGet(new PathParser("proj", "assets"), req, rootResponse);
+
+        verify(rootResponse).setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY);
+        verify(rootResponse).setHeader("Location", "/system/webdev/proj/assets/");
+        verify(rootResponse, never()).getOutputStream();
+
+        when(req.getRequestURI()).thenReturn("/system/webdev/proj/assets/nested%20docs");
+        when(req.getQueryString()).thenReturn("ref=a%2Fb");
+        HttpServletResponse nestedResponse = mock(HttpServletResponse.class);
+        handler.doHead(new PathParser("proj", "assets/nested docs"), req, nestedResponse);
+
+        verify(nestedResponse).setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY);
+        verify(nestedResponse).setHeader("Location", "/system/webdev/proj/assets/nested%20docs/?ref=a%2Fb");
+        verify(nestedResponse, never()).getOutputStream();
     }
 
     @Test

@@ -10,6 +10,7 @@ import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,6 +39,18 @@ public class MountedFolderResourceHandler extends BaseHandler {
         ResolvedFile resolved = resolve(path);
         if (resolved == null) {
             resp.sendError(404);
+            return;
+        }
+
+        String requestUri = req.getRequestURI();
+        if (resolved.directoryIndex() && !requestUri.endsWith("/")) {
+            if (requestUri.startsWith("//")) {
+                resp.sendError(HttpServletResponse.SC_BAD_REQUEST);
+                return;
+            }
+            String query = req.getQueryString();
+            resp.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY);
+            resp.setHeader("Location", requestUri + "/" + (query == null ? "" : "?" + query));
             return;
         }
 
@@ -99,25 +112,31 @@ public class MountedFolderResourceHandler extends BaseHandler {
     }
 
     private ResolvedFile resolve(PathParser path) throws IOException {
-        String urlPath = StringUtils.replaceOnce(path.getResource(), resourcePath, "");
-        if (urlPath.startsWith("/")) {
-            urlPath = urlPath.substring(1);
-        }
-        if (urlPath.isBlank()) {
-            urlPath = "index.html";
+        if (StringUtils.isBlank(filePath)) {
+            return null;
         }
 
-        Path basePath = Path.of(filePath).toAbsolutePath().normalize();
+        String resource = path.isRootPath() ? resourcePath : path.getResource();
+        String urlPath = StringUtils.removeStart(StringUtils.removeStart(resource, resourcePath), "/");
+        Path basePath;
+        Path resolvedPath;
+        try {
+            basePath = Path.of(filePath).toAbsolutePath().normalize();
+            resolvedPath = basePath.resolve(urlPath).normalize();
+        } catch (InvalidPathException ignored) {
+            return null;
+        }
+
         if (!Files.isDirectory(basePath)) {
             return null;
         }
 
-        Path resolvedPath = basePath.resolve(urlPath).normalize();
         if (!resolvedPath.startsWith(basePath)) {
             return null;
         }
 
-        if (Files.isDirectory(resolvedPath)) {
+        boolean directoryIndex = Files.isDirectory(resolvedPath);
+        if (directoryIndex) {
             resolvedPath = resolvedPath.resolve("index.html");
         }
 
@@ -141,7 +160,8 @@ public class MountedFolderResourceHandler extends BaseHandler {
                 resolvedReal,
                 contentType,
                 Files.size(resolvedReal),
-                Files.getLastModifiedTime(resolvedReal).toMillis());
+                Files.getLastModifiedTime(resolvedReal).toMillis(),
+                directoryIndex);
     }
 
     private static boolean isNotModified(HttpServletRequest req, long lastModified) {
@@ -247,7 +267,7 @@ public class MountedFolderResourceHandler extends BaseHandler {
         return valid.isEmpty() ? null : valid;
     }
 
-    private record ResolvedFile(Path path, String contentType, long length, long lastModified) {
+    private record ResolvedFile(Path path, String contentType, long length, long lastModified, boolean directoryIndex) {
     }
 
     private record Range(long start, long end) {

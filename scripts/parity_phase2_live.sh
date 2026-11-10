@@ -13,6 +13,7 @@ PROJECT="$2"
 LAST_HDR=""
 LAST_BODY=""
 LAST_CODE=""
+LAST_URL=""
 TMP_FILES=()
 
 cleanup() {
@@ -24,20 +25,28 @@ trap cleanup EXIT
 
 request() {
   local method="$1"
-  local path="$2"
+  local resource="$2"
+  shift 2
+  request_url "$method" "$BASE_URL/system/webdev/$PROJECT/$resource" "$@"
+}
+
+request_url() {
+  local method="$1"
+  local url="$2"
   shift 2
 
   LAST_HDR="$(mktemp)"
   LAST_BODY="$(mktemp)"
   TMP_FILES+=("$LAST_HDR" "$LAST_BODY")
 
-  local url="$BASE_URL/system/webdev/$PROJECT/$path"
+  local result
   if [[ "$method" == "HEAD" ]]; then
-    LAST_CODE="$(curl --path-as-is -sS --max-time 20 -I -D "$LAST_HDR" -o "$LAST_BODY" -w "%{http_code}" "$@" "$url")"
+    result="$(curl --path-as-is -sS --max-time 20 -I -D "$LAST_HDR" -o "$LAST_BODY" -w '%{http_code} %{url_effective}' "$@" "$url")"
   else
-    LAST_CODE="$(curl --path-as-is -sS --max-time 20 -D "$LAST_HDR" -o "$LAST_BODY" -X "$method" -w "%{http_code}" "$@" "$url")"
+    result="$(curl --path-as-is -sS --max-time 20 -D "$LAST_HDR" -o "$LAST_BODY" -X "$method" -w '%{http_code} %{url_effective}' "$@" "$url")"
   fi
 
+  read -r LAST_CODE LAST_URL <<< "$result"
   echo "$method $url -> $LAST_CODE"
 }
 
@@ -98,14 +107,69 @@ request GET file -H 'Range: bytes=100-120'
 assert_code 416
 assert_header_contains '^Content-Range: bytes \*/16'
 
-request GET mounted
+request GET file -H 'Range: bytes=0-1' -H 'Range: bytes=4-5'
+assert_code 206
+assert_header_contains '^Content-Type: multipart/byteranges;'
+grep -qi '^Content-Range: bytes 0-1/16' "$LAST_BODY"
+grep -qi '^Content-Range: bytes 4-5/16' "$LAST_BODY"
+
+request GET file -H 'Range: bytes=0-3,2-5'
+assert_code 206
+assert_header_contains '^Content-Range: bytes 0-5/16'
+assert_body_equals "012345"
+
+request GET file -H 'Range: bytes=0-1,4-5' -H 'Request-Range: bytes=0-1,4-5'
+assert_code 206
+assert_header_contains '^Content-Type: multipart/x-byteranges;'
+grep -qi '^Content-Range: bytes 0-1/16' "$LAST_BODY"
+grep -qi '^Content-Range: bytes 4-5/16' "$LAST_BODY"
+
+request GET 'mounted?smoke=relative'
+assert_code 301
+location="$(awk 'tolower($1) == "location:" { sub(/\r$/, "", $2); print $2 }' "$LAST_HDR")"
+if [[ "$location" != "/system/webdev/$PROJECT/mounted/?smoke=relative" ]]; then
+  echo "Unexpected directory redirect: $location" >&2
+  exit 1
+fi
+
+request GET 'mounted?smoke=relative' --location
 assert_code 200
-assert_body_equals "mounted index"
+assert_header_contains '^Content-Type: text/html'
+
+asset_url="$(python3 - "$LAST_URL" "$LAST_BODY" <<'PY'
+from html.parser import HTMLParser
+from pathlib import Path
+import sys
+from urllib.parse import urljoin, urlsplit
+
+
+class AssetLink(HTMLParser):
+    href = None
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == 'a' and attrs.get('id') == 'relative-asset':
+            self.href = attrs.get('href')
+
+
+link = AssetLink()
+link.feed(Path(sys.argv[2]).read_text(encoding='utf-8'))
+if not link.href or link.href.startswith('/') or urlsplit(link.href).scheme:
+    sys.exit('Missing relative asset link in mounted index HTML')
+print(urljoin(sys.argv[1], link.href))
+PY
+)"
+request_url GET "$asset_url"
+assert_code 200
+assert_body_equals "abcdefghijklmnopqrstuvwxyz"
 
 request GET mounted/asset.txt -H 'Range: bytes=5-'
 assert_code 206
 assert_body_equals "fghijklmnopqrstuvwxyz"
 assert_header_contains '^Content-Range: bytes 5-25/26'
+
+request GET mounted/asset.txt%21suffix
+assert_code 404
 
 request GET mounted/../../etc/passwd
 assert_code 404

@@ -19,15 +19,12 @@ import java.io.IOException;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
 
 public class WebDevDispatch extends HttpServlet {
     private static final LoggerEx LOG = LogUtil.getLogger("WebCompat.Dispatch");
     private static final long PROJECT_CACHE_MAX_ENTRIES = 256;
     private static final long PROJECT_CACHE_EXPIRE_MINUTES = 30;
 
-    private final Pattern basePathPattern;
-    private final Pattern pathPattern;
     private final LoadingCache<String, ProjectDispatcher> mainCache;
 
     private final ResourceCollectionListener projectListener = new ResourceCollectionListener() {
@@ -66,10 +63,6 @@ public class WebDevDispatch extends HttpServlet {
                 return new ProjectDispatcher(WebDevDispatch.this, projectName);
             }
         });
-
-        String projectPattern = "[A-Za-z_][A-Za-z0-9_-]*";
-        this.basePathPattern = Pattern.compile(String.format("/%s/(%s)/?", "webdev", projectPattern));
-        this.pathPattern = Pattern.compile(String.format("/%s/(%s)/([\\w\\-\\.\\/\\+\\%%\\ ]+).*", "webdev", projectPattern));
     }
 
     GatewayContext getContext() {
@@ -89,10 +82,6 @@ public class WebDevDispatch extends HttpServlet {
         }
     }
 
-    private PathParser parse(HttpServletRequest request) {
-        return PathParser.fromRequest(basePathPattern, pathPattern, request);
-    }
-
     @Override
     protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         if ("PATCH".equalsIgnoreCase(req.getMethod())) {
@@ -105,7 +94,7 @@ public class WebDevDispatch extends HttpServlet {
     private void dispatch(HttpServletRequest req, HttpServletResponse resp, String methodName) throws IOException, ServletException {
         LOG.tracef("%s(path=%s)", methodName, req.getPathInfo());
 
-        PathParser path = parse(req);
+        PathParser path = PathParser.fromRequest(req);
         if (!path.isValid()) {
             resp.sendError(404);
             return;

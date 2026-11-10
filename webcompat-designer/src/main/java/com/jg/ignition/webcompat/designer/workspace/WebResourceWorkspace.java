@@ -1,17 +1,27 @@
 package com.jg.ignition.webcompat.designer.workspace;
 
 import com.inductiveautomation.ignition.client.icons.VectorIcons;
+import com.inductiveautomation.ignition.client.gateway_interface.GatewayConnectionManager;
+import com.inductiveautomation.ignition.client.util.BrowserLauncher;
+import com.inductiveautomation.ignition.client.util.ClipboardUtil;
+import com.inductiveautomation.ignition.client.util.action.BaseAction;
+import com.inductiveautomation.ignition.client.util.gui.ErrorUtil;
 import com.inductiveautomation.ignition.common.BundleUtil;
 import com.inductiveautomation.ignition.common.ImmutableBytes;
 import com.inductiveautomation.ignition.common.gson.JsonElement;
 import com.inductiveautomation.ignition.common.gson.JsonObject;
+import com.inductiveautomation.ignition.common.resourcecollection.Resource;
 import com.inductiveautomation.ignition.common.resourcecollection.ResourceBuilder;
 import com.inductiveautomation.ignition.common.resourcecollection.ResourcePath;
 import com.inductiveautomation.ignition.designer.model.DesignerContext;
+import com.inductiveautomation.ignition.designer.model.menu.JMenuMerge;
+import com.inductiveautomation.ignition.designer.model.menu.MenuBarMerge;
+import com.inductiveautomation.ignition.designer.navtree.model.AbstractNavTreeNode;
 import com.inductiveautomation.ignition.designer.tabbedworkspace.NewResourceAction;
 import com.inductiveautomation.ignition.designer.tabbedworkspace.ResourceDescriptor;
 import com.inductiveautomation.ignition.designer.tabbedworkspace.ResourceEditor;
 import com.inductiveautomation.ignition.designer.tabbedworkspace.ResourceFolderNode;
+import com.inductiveautomation.ignition.designer.tabbedworkspace.ResourceNode;
 import com.inductiveautomation.ignition.designer.tabbedworkspace.TabbedResourceWorkspace;
 import com.inductiveautomation.ignition.designer.workspacewelcome.DefaultResourceBuilderDelegate;
 import com.inductiveautomation.ignition.designer.workspacewelcome.RecentlyModifiedTablePanel;
@@ -21,7 +31,12 @@ import com.inductiveautomation.ignition.designer.workspacewelcome.WorkspaceWelco
 import com.jg.ignition.webcompat.common.MethodObject;
 import com.jg.ignition.webcompat.common.PythonResource;
 import com.jg.ignition.webcompat.common.WebCompatModule;
+import java.awt.datatransfer.StringSelection;
+import java.awt.event.ActionEvent;
 import java.io.File;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URLConnection;
 import java.nio.file.Files;
 import java.util.List;
@@ -31,6 +46,8 @@ import javax.swing.Icon;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JPopupMenu;
+import javax.swing.tree.TreePath;
+import org.apache.commons.lang3.StringUtils;
 
 public class WebResourceWorkspace extends TabbedResourceWorkspace {
     private static final String WORKSPACE_KEY = "webcompat-workspace";
@@ -40,6 +57,27 @@ public class WebResourceWorkspace extends TabbedResourceWorkspace {
     private static final Icon TEXT_ICON = VectorIcons.get("file-text");
     private static final Icon FOLDER_ICON = VectorIcons.get("tree-folder");
     private static final Icon RESOURCE_ICON = PYTHON_ICON;
+    private final MenuBarMerge menu = new MenuBarMerge(WORKSPACE_KEY);
+    private final BaseAction launchResource = new BaseAction("webcompat.actions.launchResource") {
+        @Override
+        public void actionPerformed(ActionEvent event) {
+            ResourceEditor editor = getSelectedEditor();
+            if (editor != null) {
+                String gateway = GatewayConnectionManager.getInstance().getGatewayWebURL();
+                try {
+                    BrowserLauncher.openURL(StringUtils.removeEnd(gateway, "/")
+                            + mountedPath(editor.getResourcePath()));
+                } catch (IOException | URISyntaxException ex) {
+                    ErrorUtil.showError(ex);
+                }
+            }
+        }
+
+        @Override
+        protected boolean evaluateEnabled() {
+            return getSelectedEditor() != null;
+        }
+    };
 
     public static final ResourceDescriptor DESCRIPTOR = ResourceDescriptor.builder()
             .resourceType(WebCompatModule.RESOURCE_TYPE)
@@ -76,6 +114,29 @@ public class WebResourceWorkspace extends TabbedResourceWorkspace {
 
     public WebResourceWorkspace(DesignerContext context) {
         super(context, DESCRIPTOR);
+        JMenuMerge tools = new JMenuMerge("tools");
+        JMenuMerge launch = new JMenuMerge("launch", "webcompat.actions.launch");
+        launch.add(launchResource);
+        tools.add(40000, launch);
+        menu.add(2147483547, tools);
+        getModel().addChangeListener(event -> launchResource.updateEnabled());
+        launchResource.updateEnabled();
+    }
+
+    @Override
+    public MenuBarMerge getMenu() {
+        return menu;
+    }
+
+    @Override
+    protected AbstractNavTreeNode createRootNavTreeNode() {
+        return new WebResourceFolder();
+    }
+
+    private String mountedPath(ResourcePath path) throws URISyntaxException {
+        String decoded = "/system/" + WebCompatModule.SERVLET_KEY + "/"
+                + context.getProject().getName() + "/" + path.getFolderPath();
+        return new URI(null, null, decoded, null).toASCIIString();
     }
 
     @Override
@@ -90,6 +151,8 @@ public class WebResourceWorkspace extends TabbedResourceWorkspace {
 
     @Override
     public void addNewResourceActions(ResourceFolderNode folder, JPopupMenu menu) {
+        menu.add(new ImportTextResourceAction(this, folder));
+        menu.addSeparator();
         menu.add(new NewPythonResourceAction(this, folder));
         menu.add(new NewFileResourceAction(this, folder));
         menu.add(new NewTextResourceAction(this, folder));
@@ -125,6 +188,84 @@ public class WebResourceWorkspace extends TabbedResourceWorkspace {
         builder
                 .setApplicationScope(1)
                 .putData("config.json", WebCompatModule.GSON.toJson((JsonElement) prototype));
+    }
+
+    private class WebResourceFolder extends ResourceFolderNode {
+        WebResourceFolder() {
+            super(WebResourceWorkspace.this.context, WebResourceWorkspace.this, true);
+        }
+
+        WebResourceFolder(Resource resource) {
+            super(WebResourceWorkspace.this.context, WebResourceWorkspace.this, resource);
+        }
+
+        @Override
+        protected AbstractNavTreeNode createChildNode(Resource resource) {
+            if (!getResourceType().equals(resource.getResourceType())) {
+                return null;
+            }
+            return resource.isFolder() ? new WebResourceFolder(resource) : new WebResourceNode(resource);
+        }
+    }
+
+    private class WebResourceNode extends ResourceNode {
+        private final PopupAction copyPath = new PopupAction("webcompat.actions.copyMountedPath", VectorIcons.get("copy-path")) {
+            @Override
+            public void actionPerformed(ActionEvent event) {
+                try {
+                    ClipboardUtil.doCopyTransferableToClipboard(new StringSelection(mountedPath(getResourcePath())));
+                } catch (URISyntaxException ex) {
+                    ErrorUtil.showError(ex);
+                }
+            }
+        };
+
+        WebResourceNode(Resource resource) {
+            super(WebResourceWorkspace.this.context, WebResourceWorkspace.this, resource);
+        }
+
+        @Override
+        protected void addEditActions(JPopupMenu menu) {
+            super.addEditActions(menu);
+            menu.add(copyPath);
+        }
+
+        @Override
+        protected void setupEditActions(TreePath[] paths, List<AbstractNavTreeNode> selection) {
+            super.setupEditActions(paths, selection);
+            copyPath.setEnabled(selection.size() == 1);
+        }
+    }
+
+    private static class ImportTextResourceAction extends NewResourceAction {
+        private File source;
+
+        ImportTextResourceAction(TabbedResourceWorkspace workspace, ResourceFolderNode folder) {
+            super(workspace, folder);
+            putValue(NAME, BundleUtil.i18n("webcompat.text.import"));
+            putValue(SMALL_ICON, TEXT_ICON);
+        }
+
+        @Override
+        protected void configureResource(ResourceBuilder builder) throws IOException {
+            JFileChooser chooser = new JFileChooser();
+            canceled = chooser.showOpenDialog((JComponent) workspace.getWorkspace()) != JFileChooser.APPROVE_OPTION;
+            if (canceled) {
+                return;
+            }
+            source = chooser.getSelectedFile();
+            String mimeType = URLConnection.guessContentTypeFromName(source.getName());
+            JsonObject prototype = new JsonObject();
+            prototype.addProperty("resource-type", "text-resource");
+            prototype.addProperty("content-type", mimeType == null ? "text/plain" : mimeType);
+            prototype.addProperty("text", Files.readString(source.toPath()));
+            addPrototype(builder, prototype);
+        }
+
+        @Override
+        protected String newResourceName() {
+            return source == null ? "TextImport" : source.getName();
+        }
     }
 
     private static class NewPythonResourceAction extends NewResourceAction {

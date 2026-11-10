@@ -15,6 +15,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.Collections;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class FileResourceHandlerTest {
@@ -25,7 +27,6 @@ class FileResourceHandlerTest {
 
         HttpServletRequest req = mock(HttpServletRequest.class);
         HttpServletResponse resp = mock(HttpServletResponse.class);
-        when(req.getHeader("Range")).thenReturn(null);
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         when(resp.getOutputStream()).thenReturn(new MemoryOutputStream(out));
@@ -43,7 +44,7 @@ class FileResourceHandlerTest {
 
         HttpServletRequest req = mock(HttpServletRequest.class);
         HttpServletResponse resp = mock(HttpServletResponse.class);
-        when(req.getHeader("Range")).thenReturn("bytes=2-4");
+        when(req.getHeaders("Range")).thenReturn(Collections.enumeration(List.of("bytes=2-4")));
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         when(resp.getOutputStream()).thenReturn(new MemoryOutputStream(out));
@@ -63,7 +64,7 @@ class FileResourceHandlerTest {
 
         HttpServletRequest req = mock(HttpServletRequest.class);
         HttpServletResponse resp = mock(HttpServletResponse.class);
-        when(req.getHeader("Range")).thenReturn("bytes=100-200");
+        when(req.getHeaders("Range")).thenReturn(Collections.enumeration(List.of("bytes=100-200")));
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         when(resp.getOutputStream()).thenReturn(new MemoryOutputStream(out));
@@ -83,7 +84,7 @@ class FileResourceHandlerTest {
 
         HttpServletRequest openReq = mock(HttpServletRequest.class);
         HttpServletResponse openResp = mock(HttpServletResponse.class);
-        when(openReq.getHeader("Range")).thenReturn("bytes=3-");
+        when(openReq.getHeaders("Range")).thenReturn(Collections.enumeration(List.of("bytes=3-")));
         ByteArrayOutputStream openOut = new ByteArrayOutputStream();
         when(openResp.getOutputStream()).thenReturn(new MemoryOutputStream(openOut));
         handler.doGet(new PathParser("proj", "file"), openReq, openResp);
@@ -91,7 +92,7 @@ class FileResourceHandlerTest {
 
         HttpServletRequest suffixReq = mock(HttpServletRequest.class);
         HttpServletResponse suffixResp = mock(HttpServletResponse.class);
-        when(suffixReq.getHeader("Range")).thenReturn("bytes=-2");
+        when(suffixReq.getHeaders("Range")).thenReturn(Collections.enumeration(List.of("bytes=-2")));
         ByteArrayOutputStream suffixOut = new ByteArrayOutputStream();
         when(suffixResp.getOutputStream()).thenReturn(new MemoryOutputStream(suffixOut));
         handler.doGet(new PathParser("proj", "file"), suffixReq, suffixResp);
@@ -99,13 +100,13 @@ class FileResourceHandlerTest {
     }
 
     @Test
-    void supportsMultipartRanges() throws IOException {
+    void servesRangesFromMultipleHeaderLines() throws IOException {
         byte[] payload = "abcdef".getBytes();
         FileResourceHandler handler = new FileResourceHandler("text/plain", payload);
 
         HttpServletRequest req = mock(HttpServletRequest.class);
         HttpServletResponse resp = mock(HttpServletResponse.class);
-        when(req.getHeader("Range")).thenReturn("bytes=0-1,4-5");
+        when(req.getHeaders("Range")).thenReturn(Collections.enumeration(List.of("bytes=0-1", "bytes=4-5")));
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         when(resp.getOutputStream()).thenReturn(new MemoryOutputStream(out));
@@ -127,7 +128,7 @@ class FileResourceHandlerTest {
 
         HttpServletRequest req = mock(HttpServletRequest.class);
         HttpServletResponse resp = mock(HttpServletResponse.class);
-        when(req.getHeader("Range")).thenReturn("bytes=1-3");
+        when(req.getHeaders("Range")).thenReturn(Collections.enumeration(List.of("bytes=1-3")));
 
         handler.doHead(new PathParser("proj", "file"), req, resp);
 
@@ -145,7 +146,7 @@ class FileResourceHandlerTest {
 
         HttpServletRequest req = mock(HttpServletRequest.class);
         HttpServletResponse resp = mock(HttpServletResponse.class);
-        when(req.getHeader("Range")).thenReturn("bytes=50-60");
+        when(req.getHeaders("Range")).thenReturn(Collections.enumeration(List.of("bytes=50-60")));
 
         handler.doHead(new PathParser("proj", "file"), req, resp);
 

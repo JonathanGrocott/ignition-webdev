@@ -43,7 +43,7 @@ public class WebResourceEditor extends ResourceEditor<JsonObject> implements Loc
 
         switch (resourceType) {
             case PythonResource.TYPE -> editor = new PythonResourceEditor(config);
-            case "file-resource" -> editor = new FileResourceEditor(config);
+            case "file-resource" -> editor = new FileResourceEditor((TabbedResourceWorkspace) workspace, resourcePath, config);
             case "text-resource" -> editor = new TextResourceEditor(config);
             case "mounted-folder-resource" -> editor = new MountedFolderResourceEditor(config);
             default -> editor = new EmptyEditor(config);

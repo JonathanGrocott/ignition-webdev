@@ -11,12 +11,14 @@ import com.inductiveautomation.ignition.designer.model.AbstractDesignerModuleHoo
 import com.inductiveautomation.ignition.designer.model.DesignerContext;
 import com.inductiveautomation.ignition.designer.model.SaveContext;
 import com.jg.ignition.webcompat.common.WebCompatModule;
+import com.jg.ignition.webcompat.designer.eventstream.HttpSourceDesignDelegate;
 import com.jg.ignition.webcompat.designer.search.WebDevSearchProvider;
 import com.jg.ignition.webcompat.designer.workspace.WebResourceWorkspace;
 import javax.swing.Icon;
 
 public class DesignerHook extends AbstractDesignerModuleHook implements Locatable {
     private WebResourceWorkspace workspace;
+    private Runnable unregisterHttpSource;
 
     @Override
     public void startup(DesignerContext context, LicenseState activationState) {
@@ -25,6 +27,17 @@ public class DesignerHook extends AbstractDesignerModuleHook implements Locatabl
         workspace = new WebResourceWorkspace(context);
         context.registerResourceWorkspace(workspace);
         context.registerSearchProvider(new WebDevSearchProvider(context, workspace));
+        if (context.getModule(WebCompatModule.EVENT_STREAM_MODULE_ID) != null) {
+            unregisterHttpSource = HttpSourceDesignDelegate.register(context);
+        }
+    }
+
+    @Override
+    public void shutdown() {
+        if (unregisterHttpSource != null) {
+            unregisterHttpSource.run();
+            unregisterHttpSource = null;
+        }
     }
 
     @Override
